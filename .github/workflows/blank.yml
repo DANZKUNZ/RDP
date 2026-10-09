@@ -1,0 +1,70 @@
+name: Windows RDP Environment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-environment:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check Windows Environment
+        shell: pwsh
+        run: |
+          Write-Host "Windows runner is ready."
+          Write-Host "Computer: $env:COMPUTERNAME"
+          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+
+      - name: Check RDP Service
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name TermService -ErrorAction Stop
+
+          Write-Host "RDP service: $($service.Name)"
+          Write-Host "Current status: $($service.Status)"
+
+      - name: Install Tailscale
+        shell: pwsh
+        run: |
+          $installerPath = Join-Path $env:TEMP "tailscale.msi"
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+
+          Invoke-WebRequest -Uri $url -OutFile $installerPath
+
+          $process = Start-Process msiexec.exe `
+            -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" `
+            -Wait -PassThru
+
+          Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
+
+          if ($process.ExitCode -ne 0) {
+            throw "Tailscale installation failed: $($process.ExitCode)"
+          }
+
+          Write-Host "Tailscale installation completed."
+
+      - name: Verify Tailscale Installation
+        shell: pwsh
+        run: |
+          $tailscale = "$env:ProgramFiles\Tailscale\tailscale.exe"
+
+          if (-not (Test-Path $tailscale)) {
+            throw "Tailscale executable was not found."
+          }
+
+          & $tailscale version
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to verify Tailscale."
+          }
+
+      - name: Report Environment Status
+        shell: pwsh
+        run: |
+          Write-Host "Windows environment check completed."
+          Write-Host "This runner is temporary."
+          Write-Host "No RDP credentials or authentication settings were changed."
